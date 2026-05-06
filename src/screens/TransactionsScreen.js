@@ -14,6 +14,7 @@ import {
   createPurchaseRequest,
   createSaleRequest,
   loadPartnersRequest,
+  loadPurchaseDetailsRequest,
   loadTransactionProductsRequest,
   loadTransactionsRequest,
   payPurchaseRequest
@@ -46,6 +47,7 @@ export default function TransactionsScreen() {
   const [purchaseForm, setPurchaseForm] = useState({ partner_id: "", product_id: "", qty: "", costPrice: "", amountPaid: "" });
   const [saleForm, setSaleForm] = useState({ partner_id: "", product_id: "", qty: "", costPrice: "", amountPaid: "" });
   const [payAmount, setPayAmount] = useState({});
+  const [detailsByPurchase, setDetailsByPurchase] = useState({});
 
   const load = useCallback(
     async (mode = "load") => {
@@ -93,6 +95,9 @@ export default function TransactionsScreen() {
       balance: total - paid
     };
   }, [rows]);
+
+  const partnerOptions = useMemo(() => partners.slice(0, 12), [partners]);
+  const productOptions = useMemo(() => products.slice(0, 12), [products]);
 
   function resolveCost(productId, fallbackPrice = "") {
     const match = products.find((item) => Number(item.product_id) === Number(productId));
@@ -160,6 +165,30 @@ export default function TransactionsScreen() {
     }
   }
 
+  async function handleLoadDetails(row) {
+    setError("");
+    const purchaseId = Number(row.purchase_id || 0);
+    if (purchaseId <= 0) {
+      setError("Transaction ID is missing.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await loadPurchaseDetailsRequest({ purchase_id: purchaseId, csrfToken });
+      setDetailsByPurchase((prev) => ({
+        ...prev,
+        [purchaseId]: {
+          items: Array.isArray(response.items) ? response.items : Array.isArray(response.data?.items) ? response.data.items : []
+        }
+      }));
+    } catch (requestError) {
+      setError(requestError.message || "Could not load transaction details.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
       <ScrollView
@@ -178,7 +207,31 @@ export default function TransactionsScreen() {
         <View style={styles.formCard}>
           <Text style={styles.sectionTitle}>Create Purchase</Text>
           <Input label="Partner ID" keyboardType="number-pad" onChangeText={(value) => setPurchaseForm((p) => ({ ...p, partner_id: value }))} value={purchaseForm.partner_id} />
+          <Text style={styles.pickHint}>Tap a chip or type an ID.</Text>
+          <QuickPickRow
+            items={partnerOptions}
+            keyField="sid"
+            labelField="sName"
+            onPick={(item) => setPurchaseForm((prev) => ({ ...prev, partner_id: String(item.sid || "") }))}
+            selectedId={purchaseForm.partner_id}
+            title="Quick pick partner"
+          />
           <Input label="Product ID" keyboardType="number-pad" onChangeText={(value) => setPurchaseForm((p) => ({ ...p, product_id: value }))} value={purchaseForm.product_id} />
+          <Text style={styles.pickHint}>Tap a chip or type an ID.</Text>
+          <QuickPickRow
+            items={productOptions}
+            keyField="product_id"
+            labelField="product_name"
+            onPick={(item) =>
+              setPurchaseForm((prev) => ({
+                ...prev,
+                product_id: String(item.product_id || ""),
+                costPrice: String(toNumber(item.cost_price || item.selling_price || prev.costPrice, 0))
+              }))
+            }
+            selectedId={purchaseForm.product_id}
+            title="Quick pick product"
+          />
           <Input label="Quantity" keyboardType="decimal-pad" onChangeText={(value) => setPurchaseForm((p) => ({ ...p, qty: value }))} value={purchaseForm.qty} />
           <Input label="Cost Price (optional override)" keyboardType="decimal-pad" onChangeText={(value) => setPurchaseForm((p) => ({ ...p, costPrice: value }))} value={purchaseForm.costPrice} />
           <Input label="Amount Paid" keyboardType="decimal-pad" onChangeText={(value) => setPurchaseForm((p) => ({ ...p, amountPaid: value }))} value={purchaseForm.amountPaid} />
@@ -192,7 +245,31 @@ export default function TransactionsScreen() {
         <View style={styles.formCard}>
           <Text style={styles.sectionTitle}>Create Sale</Text>
           <Input label="Partner ID" keyboardType="number-pad" onChangeText={(value) => setSaleForm((p) => ({ ...p, partner_id: value }))} value={saleForm.partner_id} />
+          <Text style={styles.pickHint}>Tap a chip or type an ID.</Text>
+          <QuickPickRow
+            items={partnerOptions}
+            keyField="sid"
+            labelField="sName"
+            onPick={(item) => setSaleForm((prev) => ({ ...prev, partner_id: String(item.sid || "") }))}
+            selectedId={saleForm.partner_id}
+            title="Quick pick partner"
+          />
           <Input label="Product ID" keyboardType="number-pad" onChangeText={(value) => setSaleForm((p) => ({ ...p, product_id: value }))} value={saleForm.product_id} />
+          <Text style={styles.pickHint}>Tap a chip or type an ID.</Text>
+          <QuickPickRow
+            items={productOptions}
+            keyField="product_id"
+            labelField="product_name"
+            onPick={(item) =>
+              setSaleForm((prev) => ({
+                ...prev,
+                product_id: String(item.product_id || ""),
+                costPrice: String(toNumber(item.selling_price || item.cost_price || prev.costPrice, 0))
+              }))
+            }
+            selectedId={saleForm.product_id}
+            title="Quick pick product"
+          />
           <Input label="Quantity" keyboardType="decimal-pad" onChangeText={(value) => setSaleForm((p) => ({ ...p, qty: value }))} value={saleForm.qty} />
           <Input label="Selling Price (optional override)" keyboardType="decimal-pad" onChangeText={(value) => setSaleForm((p) => ({ ...p, costPrice: value }))} value={saleForm.costPrice} />
           <Input label="Amount Paid" keyboardType="decimal-pad" onChangeText={(value) => setSaleForm((p) => ({ ...p, amountPaid: value }))} value={saleForm.amountPaid} />
@@ -217,6 +294,21 @@ export default function TransactionsScreen() {
               <Text style={styles.itemMeta}>Paid: {formatCurrency(amountPaid)}</Text>
               <Text style={styles.itemMeta}>Balance: {formatCurrency(balance)}</Text>
               <Text style={styles.itemStatus}>Status: {String(item.status || "unknown").toUpperCase()}</Text>
+              <TouchableOpacity disabled={saving} onPress={() => handleLoadDetails(item)} style={styles.detailBtn}>
+                <Text style={styles.detailBtnText}>Load details</Text>
+              </TouchableOpacity>
+              {detailsByPurchase[item.purchase_id] ? (
+                <View style={styles.detailsBox}>
+                  {(detailsByPurchase[item.purchase_id].items || []).map((detailItem, detailIndex) => (
+                    <View key={`di-${item.purchase_id}-${detailItem.item_id || detailIndex}`} style={styles.detailRow}>
+                      <Text style={styles.detailName}>{detailItem.product_name || "Product"}</Text>
+                      <Text style={styles.detailMeta}>Qty: {toNumber(detailItem.qty)}</Text>
+                      <Text style={styles.detailMeta}>Unit Price: {formatCurrency(detailItem.costPrice || detailItem.cost_price)}</Text>
+                      <Text style={styles.detailMeta}>Line Total: {formatCurrency(detailItem.total)}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
               <View style={styles.payRow}>
                 <TextInput
                   keyboardType="decimal-pad"
@@ -259,6 +351,33 @@ function StatCard({ label, value }) {
     <View style={styles.statCard}>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
+    </View>
+  );
+}
+
+function QuickPickRow({ title, items, keyField, labelField, selectedId, onPick }) {
+  return (
+    <View style={styles.quickPickWrap}>
+      <Text style={styles.quickPickTitle}>{title}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.quickPickRow}>
+          {items.map((item) => {
+            const id = String(item?.[keyField] || "");
+            const active = String(selectedId || "") === id;
+            return (
+              <TouchableOpacity
+                key={`${keyField}-${id}`}
+                onPress={() => onPick(item)}
+                style={[styles.quickPickChip, active ? styles.quickPickChipActive : null]}
+              >
+                <Text style={[styles.quickPickChipText, active ? styles.quickPickChipTextActive : null]}>
+                  #{id} {item?.[labelField] || "Item"}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -314,6 +433,35 @@ const styles = StyleSheet.create({
   },
   payBtn: { alignItems: "center", backgroundColor: "#176b87", borderRadius: 8, justifyContent: "center", minHeight: 38, paddingHorizontal: 14 },
   payBtnText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+  detailBtn: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#e9f5f9",
+    borderRadius: 999,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  detailBtnText: { color: "#176b87", fontSize: 11, fontWeight: "800" },
+  detailsBox: { borderColor: "#e2eaf2", borderRadius: 8, borderWidth: 1, gap: 6, marginTop: 8, padding: 8 },
+  detailRow: { borderBottomColor: "#eef3f8", borderBottomWidth: 1, paddingBottom: 6 },
+  detailName: { color: "#102033", fontSize: 12, fontWeight: "800" },
+  detailMeta: { color: "#5f6e82", fontSize: 11, fontWeight: "600" },
+  pickHint: { color: "#63758a", fontSize: 11, fontWeight: "600", marginTop: 4 },
+  quickPickWrap: { marginTop: 8 },
+  quickPickTitle: { color: "#55667b", fontSize: 11, fontWeight: "700", marginBottom: 4 },
+  quickPickRow: { flexDirection: "row", gap: 6, paddingRight: 12 },
+  quickPickChip: {
+    backgroundColor: "#edf2f8",
+    borderColor: "#d6e2ee",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  quickPickChipActive: { backgroundColor: "#176b87", borderColor: "#176b87" },
+  quickPickChipText: { color: "#355066", fontSize: 11, fontWeight: "700" },
+  quickPickChipTextActive: { color: "#fff" },
   empty: { color: "#6d7b8e", fontSize: 13, textAlign: "center" },
   error: { color: "#b3261e", fontSize: 13, fontWeight: "700" }
 });

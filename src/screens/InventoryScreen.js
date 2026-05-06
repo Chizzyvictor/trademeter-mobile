@@ -13,10 +13,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   createCategoryRequest,
   createProductRequest,
+  deleteCategoryRequest,
+  deleteProductRequest,
+  editCategoryRequest,
+  editProductRequest,
+  getReorderSuggestionsRequest,
   loadCategoriesRequest,
   loadInventoryRequest,
   loadLowStockRequest,
   loadProductDetailsRequest,
+  loadStockLedgerRequest,
   restockProductRequest
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -54,8 +60,24 @@ export default function InventoryScreen() {
     reorder_level: "",
     opening_qty: ""
   });
+  const [categoryEditForm, setCategoryEditForm] = useState({ category_id: "", category_name: "", category_description: "", status: "1" });
+  const [productEditForm, setProductEditForm] = useState({
+    product_id: "",
+    product_name: "",
+    category_id: "",
+    product_unit: "pcs",
+    cost_price: "",
+    selling_price: "",
+    reorder_level: "",
+    status: "1"
+  });
+  const [deleteCategoryId, setDeleteCategoryId] = useState("");
+  const [deleteProductId, setDeleteProductId] = useState("");
   const [restockQty, setRestockQty] = useState({});
   const [detailsByProduct, setDetailsByProduct] = useState({});
+  const [reorderSuggestions, setReorderSuggestions] = useState([]);
+  const [ledgerRows, setLedgerRows] = useState([]);
+  const [ledgerProductId, setLedgerProductId] = useState("");
 
   const load = useCallback(
     async (mode = "load") => {
@@ -67,15 +89,19 @@ export default function InventoryScreen() {
       }
 
       try {
-        const [inventoryRes, lowStockRes, categoriesRes] = await Promise.all([
+        const [inventoryRes, lowStockRes, categoriesRes, reorderRes, ledgerRes] = await Promise.all([
           loadInventoryRequest({ csrfToken }),
           loadLowStockRequest({ csrfToken }),
-          loadCategoriesRequest({ csrfToken })
+          loadCategoriesRequest({ csrfToken }),
+          getReorderSuggestionsRequest({ csrfToken }),
+          loadStockLedgerRequest({ csrfToken })
         ]);
 
         setProducts(Array.isArray(inventoryRes.data) ? inventoryRes.data : []);
         setLowStockRows(Array.isArray(lowStockRes.data) ? lowStockRes.data : []);
         setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : []);
+        setReorderSuggestions(Array.isArray(reorderRes.data) ? reorderRes.data : []);
+        setLedgerRows(Array.isArray(ledgerRes.data) ? ledgerRes.data : []);
       } catch (requestError) {
         setError(requestError.message || "Could not load inventory.");
       } finally {
@@ -187,6 +213,115 @@ export default function InventoryScreen() {
     }
   }
 
+  async function handleEditCategory() {
+    setError("");
+    const categoryId = Number(categoryEditForm.category_id || 0);
+    const categoryName = String(categoryEditForm.category_name || "").trim();
+    if (categoryId <= 0 || !categoryName) {
+      setError("Category ID and category name are required.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await editCategoryRequest({
+        category_id: categoryId,
+        category_name: categoryName,
+        category_description: String(categoryEditForm.category_description || "").trim(),
+        status: Number(categoryEditForm.status || 1),
+        csrfToken
+      });
+      await load("load");
+    } catch (requestError) {
+      setError(requestError.message || "Could not edit category.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteCategory() {
+    setError("");
+    const categoryId = Number(deleteCategoryId || 0);
+    if (categoryId <= 0) {
+      setError("Enter a valid category ID to delete.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await deleteCategoryRequest({ category_id: categoryId, csrfToken });
+      setDeleteCategoryId("");
+      await load("load");
+    } catch (requestError) {
+      setError(requestError.message || "Could not delete category.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleEditProduct() {
+    setError("");
+    const productId = Number(productEditForm.product_id || 0);
+    const productName = String(productEditForm.product_name || "").trim();
+    if (productId <= 0 || !productName) {
+      setError("Product ID and product name are required.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await editProductRequest({
+        product_id: productId,
+        product_name: productName,
+        category_id: Number(productEditForm.category_id || 0),
+        product_unit: String(productEditForm.product_unit || "pcs").trim() || "pcs",
+        cost_price: Number(productEditForm.cost_price || 0),
+        selling_price: Number(productEditForm.selling_price || 0),
+        reorder_level: Number(productEditForm.reorder_level || 0),
+        status: Number(productEditForm.status || 1),
+        csrfToken
+      });
+      await load("load");
+    } catch (requestError) {
+      setError(requestError.message || "Could not edit product.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteProduct() {
+    setError("");
+    const productId = Number(deleteProductId || 0);
+    if (productId <= 0) {
+      setError("Enter a valid product ID to delete.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await deleteProductRequest({ product_id: productId, csrfToken });
+      setDeleteProductId("");
+      await load("load");
+    } catch (requestError) {
+      setError(requestError.message || "Could not delete product.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleLoadLedger() {
+    setError("");
+    setSaving(true);
+    try {
+      const response = await loadStockLedgerRequest({ product_id: ledgerProductId, csrfToken });
+      setLedgerRows(Array.isArray(response.data) ? response.data : []);
+    } catch (requestError) {
+      setError(requestError.message || "Could not load stock ledger.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleLoadDetails(product) {
     setError("");
     setSaving(true);
@@ -284,6 +419,210 @@ export default function InventoryScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.formCard}>
+          <Text style={styles.formSectionTitle}>Edit Category</Text>
+          <Input
+            label="Category ID"
+            keyboardType="number-pad"
+            onChangeText={(value) => setCategoryEditForm((prev) => ({ ...prev, category_id: value }))}
+            value={categoryEditForm.category_id}
+          />
+          <Input
+            label="Category name"
+            onChangeText={(value) => setCategoryEditForm((prev) => ({ ...prev, category_name: value }))}
+            value={categoryEditForm.category_name}
+          />
+          <Input
+            label="Description"
+            onChangeText={(value) => setCategoryEditForm((prev) => ({ ...prev, category_description: value }))}
+            value={categoryEditForm.category_description}
+          />
+          <Input
+            label="Status (1 active, 0 inactive)"
+            keyboardType="number-pad"
+            onChangeText={(value) => setCategoryEditForm((prev) => ({ ...prev, status: value }))}
+            value={categoryEditForm.status}
+          />
+          <Text style={styles.pickHint}>Tap a chip or type an ID.</Text>
+          <View style={styles.quickPickWrap}>
+            <Text style={styles.quickPickTitle}>Quick pick category</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.quickPickRow}>
+                {categories.slice(0, 15).map((item) => {
+                  const id = String(item.category_id || "");
+                  const active = String(categoryEditForm.category_id || "") === id;
+                  return (
+                    <TouchableOpacity
+                      key={`cat-${id}`}
+                      onPress={() =>
+                        setCategoryEditForm((prev) => ({
+                          ...prev,
+                          category_id: id,
+                          category_name: String(item.category_name || ""),
+                          category_description: String(item.category_description || "")
+                        }))
+                      }
+                      style={[styles.quickPickChip, active ? styles.quickPickChipActive : null]}
+                    >
+                      <Text style={[styles.quickPickChipText, active ? styles.quickPickChipTextActive : null]}>
+                        #{id} {item.category_name || "Category"}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+          <TouchableOpacity disabled={saving} onPress={handleEditCategory} style={styles.primaryBtn}>
+            <Text style={styles.primaryBtnText}>{saving ? "Please wait..." : "Save category edits"}</Text>
+          </TouchableOpacity>
+          <Input
+            label="Delete category ID"
+            keyboardType="number-pad"
+            onChangeText={setDeleteCategoryId}
+            value={deleteCategoryId}
+          />
+          <Text style={styles.pickHint}>Tap a delete chip or type an ID.</Text>
+          <View style={styles.quickPickWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.quickPickRow}>
+                {categories.slice(0, 12).map((item) => {
+                  const id = String(item.category_id || "");
+                  const active = String(deleteCategoryId || "") === id;
+                  return (
+                    <TouchableOpacity
+                      key={`del-cat-${id}`}
+                      onPress={() => setDeleteCategoryId(id)}
+                      style={[styles.quickPickChip, active ? styles.quickPickDangerActive : null]}
+                    >
+                      <Text style={[styles.quickPickChipText, active ? styles.quickPickChipTextActive : null]}>Delete #{id}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+          <TouchableOpacity disabled={saving} onPress={handleDeleteCategory} style={styles.dangerBtn}>
+            <Text style={styles.dangerBtnText}>{saving ? "Please wait..." : "Delete category"}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.formCard}>
+          <Text style={styles.formSectionTitle}>Edit Product</Text>
+          <Input
+            label="Product ID"
+            keyboardType="number-pad"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, product_id: value }))}
+            value={productEditForm.product_id}
+          />
+          <Input
+            label="Product name"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, product_name: value }))}
+            value={productEditForm.product_name}
+          />
+          <Input
+            label="Category ID"
+            keyboardType="number-pad"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, category_id: value }))}
+            value={productEditForm.category_id}
+          />
+          <Input
+            label="Unit"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, product_unit: value }))}
+            value={productEditForm.product_unit}
+          />
+          <Input
+            label="Cost price"
+            keyboardType="decimal-pad"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, cost_price: value }))}
+            value={productEditForm.cost_price}
+          />
+          <Input
+            label="Selling price"
+            keyboardType="decimal-pad"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, selling_price: value }))}
+            value={productEditForm.selling_price}
+          />
+          <Input
+            label="Reorder level"
+            keyboardType="number-pad"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, reorder_level: value }))}
+            value={productEditForm.reorder_level}
+          />
+          <Input
+            label="Status (1 active, 0 inactive)"
+            keyboardType="number-pad"
+            onChangeText={(value) => setProductEditForm((prev) => ({ ...prev, status: value }))}
+            value={productEditForm.status}
+          />
+          <Text style={styles.pickHint}>Tap a chip or type an ID.</Text>
+          <View style={styles.quickPickWrap}>
+            <Text style={styles.quickPickTitle}>Quick pick product</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.quickPickRow}>
+                {products.slice(0, 15).map((item) => {
+                  const id = String(item.product_id || "");
+                  const active = String(productEditForm.product_id || "") === id;
+                  return (
+                    <TouchableOpacity
+                      key={`prod-${id}`}
+                      onPress={() =>
+                        setProductEditForm((prev) => ({
+                          ...prev,
+                          product_id: id,
+                          product_name: String(item.product_name || ""),
+                          category_id: String(item.category_id || ""),
+                          product_unit: String(item.product_unit || "pcs"),
+                          cost_price: String(toNumber(item.cost_price, 0)),
+                          selling_price: String(toNumber(item.selling_price, 0)),
+                          reorder_level: String(toNumber(item.reorder_level, 0))
+                        }))
+                      }
+                      style={[styles.quickPickChip, active ? styles.quickPickChipActive : null]}
+                    >
+                      <Text style={[styles.quickPickChipText, active ? styles.quickPickChipTextActive : null]}>
+                        #{id} {item.product_name || "Product"}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+          <TouchableOpacity disabled={saving} onPress={handleEditProduct} style={styles.primaryBtn}>
+            <Text style={styles.primaryBtnText}>{saving ? "Please wait..." : "Save product edits"}</Text>
+          </TouchableOpacity>
+          <Input
+            label="Delete product ID"
+            keyboardType="number-pad"
+            onChangeText={setDeleteProductId}
+            value={deleteProductId}
+          />
+          <Text style={styles.pickHint}>Tap a delete chip or type an ID.</Text>
+          <View style={styles.quickPickWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.quickPickRow}>
+                {products.slice(0, 12).map((item) => {
+                  const id = String(item.product_id || "");
+                  const active = String(deleteProductId || "") === id;
+                  return (
+                    <TouchableOpacity
+                      key={`del-prod-${id}`}
+                      onPress={() => setDeleteProductId(id)}
+                      style={[styles.quickPickChip, active ? styles.quickPickDangerActive : null]}
+                    >
+                      <Text style={[styles.quickPickChipText, active ? styles.quickPickChipTextActive : null]}>Delete #{id}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+          <TouchableOpacity disabled={saving} onPress={handleDeleteProduct} style={styles.dangerBtn}>
+            <Text style={styles.dangerBtnText}>{saving ? "Please wait..." : "Delete product"}</Text>
+          </TouchableOpacity>
+        </View>
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {loading ? <ActivityIndicator style={styles.loader} color="#176b87" /> : null}
 
@@ -296,6 +635,17 @@ export default function InventoryScreen() {
           </View>
         ))}
         {!loading && lowStockRows.length === 0 ? <Text style={styles.empty}>No low-stock products.</Text> : null}
+
+        <Text style={styles.sectionTitle}>Reorder Suggestions</Text>
+        {reorderSuggestions.map((item, index) => (
+          <View key={`rs-${item.product_id || index}`} style={styles.lowItem}>
+            <Text style={styles.itemName}>{item.product_name || "Unnamed product"}</Text>
+            <Text style={styles.itemMeta}>Qty: {toNumber(item.quantity)}</Text>
+            <Text style={styles.itemMeta}>Suggested reorder: {toNumber(item.suggested_qty)}</Text>
+            <Text style={styles.itemMeta}>Days left: {toNumber(item.days_left)}</Text>
+          </View>
+        ))}
+        {!loading && reorderSuggestions.length === 0 ? <Text style={styles.empty}>No reorder suggestions.</Text> : null}
 
         <Text style={styles.sectionTitle}>Products</Text>
         {products.map((item, index) => (
@@ -337,6 +687,30 @@ export default function InventoryScreen() {
         ))}
 
         {!loading && products.length === 0 ? <Text style={styles.empty}>No products found.</Text> : null}
+
+        <View style={styles.formCard}>
+          <Text style={styles.formSectionTitle}>Stock Ledger</Text>
+          <Input
+            label="Filter by Product ID (optional)"
+            keyboardType="number-pad"
+            onChangeText={setLedgerProductId}
+            value={ledgerProductId}
+          />
+          <TouchableOpacity disabled={saving} onPress={handleLoadLedger} style={styles.primaryBtn}>
+            <Text style={styles.primaryBtnText}>{saving ? "Please wait..." : "Load stock ledger"}</Text>
+          </TouchableOpacity>
+
+          {ledgerRows.slice(0, 20).map((row) => (
+            <View key={`ledger-${row.ledger_id}`} style={styles.ledgerRow}>
+              <Text style={styles.itemName}>{row.product_name || `Product #${row.product_id || "-"}`}</Text>
+              <Text style={styles.itemMeta}>Type: {row.reference_type || "-"}</Text>
+              <Text style={styles.itemMeta}>IN: {toNumber(row.qty_in)} | OUT: {toNumber(row.qty_out)}</Text>
+              <Text style={styles.itemMeta}>Balance: {toNumber(row.balance_after)}</Text>
+              <Text style={styles.itemMeta}>At: {row.created_at || "-"}</Text>
+            </View>
+          ))}
+          {!loading && ledgerRows.length === 0 ? <Text style={styles.empty}>No stock ledger entries found.</Text> : null}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -388,6 +762,24 @@ const styles = StyleSheet.create({
   helper: { color: "#63758a", fontSize: 11, fontWeight: "600", marginTop: 6 },
   primaryBtn: { alignItems: "center", backgroundColor: "#176b87", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 10 },
   primaryBtnText: { color: "#fff", fontSize: 13, fontWeight: "800" },
+  dangerBtn: { alignItems: "center", backgroundColor: "#a12f2f", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 8 },
+  dangerBtnText: { color: "#fff", fontSize: 13, fontWeight: "800" },
+  quickPickWrap: { marginTop: 8 },
+  quickPickTitle: { color: "#55667b", fontSize: 11, fontWeight: "700", marginBottom: 4 },
+  quickPickRow: { flexDirection: "row", gap: 6, paddingRight: 12 },
+  quickPickChip: {
+    backgroundColor: "#edf2f8",
+    borderColor: "#d6e2ee",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  quickPickChipActive: { backgroundColor: "#176b87", borderColor: "#176b87" },
+  quickPickDangerActive: { backgroundColor: "#a12f2f", borderColor: "#a12f2f" },
+  quickPickChipText: { color: "#355066", fontSize: 11, fontWeight: "700" },
+  quickPickChipTextActive: { color: "#fff" },
+  pickHint: { color: "#63758a", fontSize: 11, fontWeight: "600", marginTop: 4 },
   loader: { marginVertical: 12 },
   sectionTitle: { color: "#102033", fontSize: 16, fontWeight: "800", marginTop: 4 },
   lowItem: { backgroundColor: "#fff6f2", borderColor: "#ffd8cb", borderRadius: 10, borderWidth: 1, padding: 12 },
@@ -413,6 +805,7 @@ const styles = StyleSheet.create({
   },
   restockBtn: { alignItems: "center", backgroundColor: "#0f7f4f", borderRadius: 8, justifyContent: "center", minHeight: 38, paddingHorizontal: 14 },
   restockBtnText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+  ledgerRow: { borderTopColor: "#edf2f7", borderTopWidth: 1, marginTop: 8, paddingTop: 8 },
   empty: { color: "#6d7b8e", fontSize: 13, textAlign: "center" },
   error: { color: "#b3261e", fontSize: 13, fontWeight: "700" }
 });

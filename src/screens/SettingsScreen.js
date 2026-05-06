@@ -23,6 +23,8 @@ import {
   loadSettingsRequest,
   loadUsersRequest,
   revokeSessionRequest,
+  restoreBackupRequest,
+  seedDemoUsersRequest,
   toggleUserStatusRequest,
   updateProfileRequest,
   updateUserRoleRequest
@@ -48,6 +50,8 @@ export default function SettingsScreen() {
   const [backupCapability, setBackupCapability] = useState(null);
   const [backups, setBackups] = useState([]);
   const [backupAudit, setBackupAudit] = useState([]);
+  const [restoreFilename, setRestoreFilename] = useState("");
+  const [seededUsers, setSeededUsers] = useState([]);
 
   const isOwner = String(user?.role || "").toLowerCase() === "owner";
 
@@ -203,6 +207,40 @@ export default function SettingsScreen() {
     }
   }
 
+  async function seedDemoUsers() {
+    setError("");
+    setSaving(true);
+    try {
+      const response = await seedDemoUsersRequest({ csrfToken });
+      setSeededUsers(Array.isArray(response?.data) ? response.data : []);
+      await load("load");
+    } catch (requestError) {
+      setError(requestError.message || "Could not seed demo users.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function restoreBackup() {
+    setError("");
+    const filename = String(restoreFilename || "").trim();
+    if (!filename) {
+      setError("Enter a backup filename to restore.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await restoreBackupRequest({ filename, csrfToken });
+      setRestoreFilename("");
+      await load("load");
+    } catch (requestError) {
+      setError(requestError.message || "Could not restore backup.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function fmtEpoch(epoch) {
     const ts = Number(epoch || 0);
     if (!ts) return "-";
@@ -245,6 +283,19 @@ export default function SettingsScreen() {
           <TouchableOpacity disabled={saving} onPress={createUser} style={styles.primaryBtn}>
             <Text style={styles.primaryBtnText}>{saving ? "Please wait..." : "Create user"}</Text>
           </TouchableOpacity>
+          <TouchableOpacity disabled={saving} onPress={seedDemoUsers} style={styles.secondaryBtn}>
+            <Text style={styles.secondaryBtnText}>{saving ? "Please wait..." : "Seed demo users"}</Text>
+          </TouchableOpacity>
+          {seededUsers.length > 0 ? (
+            <View style={styles.seedBox}>
+              <Text style={styles.seedTitle}>Demo accounts</Text>
+              {seededUsers.map((item, index) => (
+                <Text key={`seed-${index}`} style={styles.seedText}>
+                  {item.email || "-"} | {item.password || "-"}
+                </Text>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -309,7 +360,8 @@ export default function SettingsScreen() {
             {[
               { key: "all", label: "All" },
               { key: "success", label: "Success" },
-              { key: "failed", label: "Failed" }
+              { key: "failed", label: "Failed" },
+              { key: "blocked", label: "Blocked" }
             ].map((item) => (
               <TouchableOpacity
                 key={item.key}
@@ -348,8 +400,20 @@ export default function SettingsScreen() {
                 <Text style={styles.userName}>{row.filename || "-"}</Text>
                 <Text style={styles.userMeta}>Created: {fmtEpoch(row.created_at)}</Text>
                 <Text style={styles.userMeta}>Size: {Number(row.size || 0)} bytes</Text>
+                <TouchableOpacity disabled={saving} onPress={() => setRestoreFilename(String(row.filename || ""))} style={styles.inlineBtn}>
+                  <Text style={styles.inlineBtnText}>Use filename</Text>
+                </TouchableOpacity>
               </View>
             ))}
+
+            <Input
+              label="Restore filename"
+              onChangeText={(value) => setRestoreFilename(value)}
+              value={restoreFilename}
+            />
+            <TouchableOpacity disabled={saving} onPress={restoreBackup} style={styles.secondaryBtn}>
+              <Text style={styles.secondaryBtnText}>{saving ? "Please wait..." : "Restore selected backup"}</Text>
+            </TouchableOpacity>
 
             <Text style={styles.label}>Backup audit ({backupAudit.length})</Text>
             {backupAudit.slice(0, 8).map((row) => (
@@ -402,6 +466,8 @@ const styles = StyleSheet.create({
   helper: { color: "#63758a", fontSize: 11, fontWeight: "600", marginTop: 6 },
   primaryBtn: { alignItems: "center", backgroundColor: "#176b87", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 10 },
   primaryBtnText: { color: "#fff", fontSize: 13, fontWeight: "800" },
+  secondaryBtn: { alignItems: "center", backgroundColor: "#e8eef5", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 8 },
+  secondaryBtnText: { color: "#2b435b", fontSize: 13, fontWeight: "800" },
   userRow: { borderTopColor: "#edf2f7", borderTopWidth: 1, marginTop: 8, paddingTop: 8 },
   userName: { color: "#102033", fontSize: 13, fontWeight: "800" },
   userMeta: { color: "#5f6e82", fontSize: 12, fontWeight: "600" },
@@ -415,6 +481,9 @@ const styles = StyleSheet.create({
   filterBtnActive: { backgroundColor: "#176b87" },
   filterBtnText: { color: "#274057", fontSize: 11, fontWeight: "800" },
   filterBtnTextActive: { color: "#fff" },
+  seedBox: { backgroundColor: "#f3f8fd", borderColor: "#dce7f2", borderRadius: 8, borderWidth: 1, marginTop: 10, padding: 10 },
+  seedTitle: { color: "#2b435b", fontSize: 12, fontWeight: "800", marginBottom: 4 },
+  seedText: { color: "#3e556d", fontSize: 12, fontWeight: "600" },
   empty: { color: "#6d7b8e", fontSize: 13, textAlign: "center" },
   error: { color: "#b3261e", fontSize: 13, fontWeight: "700" }
 });

@@ -13,20 +13,26 @@ import TransactionsScreen from "./src/screens/TransactionsScreen";
 import UserProfileScreen from "./src/screens/UserProfileScreen";
 
 function RootScreen() {
-  const { isLoading, userToken } = useAuth();
+  const { isLoading, user, userToken } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
 
+  const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
+  const hasPermission = (permission) => permissions.length === 0 || permissions.includes(permission);
+  const primaryRole = String(user?.role || user?.role_name || "").toLowerCase();
+  const canViewAttendance = ["owner", "manager"].includes(primaryRole) || hasPermission("manage_users");
+
   const tabs = useMemo(
-    () => [
-      { key: "dashboard", label: "Dashboard", component: <DashboardScreen /> },
+    () =>
+      [
+      hasPermission("view_reports") ? { key: "dashboard", label: "Dashboard", component: <DashboardScreen /> } : null,
       { key: "partners", label: "Partners", component: <PartnersScreen /> },
       { key: "inventory", label: "Inventory", component: <InventoryScreen /> },
       { key: "transactions", label: "Transactions", component: <TransactionsScreen /> },
-      { key: "attendance", label: "Attendance", component: <AttendanceScreen /> },
+      canViewAttendance ? { key: "attendance", label: "Attendance", component: <AttendanceScreen /> } : null,
       { key: "profile", label: "Profile", component: <UserProfileScreen /> },
-      { key: "settings", label: "Settings", component: <SettingsScreen /> }
-    ],
-    []
+      hasPermission("manage_users") ? { key: "settings", label: "Settings", component: <SettingsScreen /> } : null
+    ].filter(Boolean),
+    [canViewAttendance, permissions, primaryRole]
   );
 
   if (isLoading) {
@@ -45,6 +51,15 @@ function RootScreen() {
 
   return (
     <View style={styles.appShell}>
+      <View style={styles.shellHeader}>
+        <View>
+          <Text style={styles.shellBrand}>TradeMeter</Text>
+          <Text style={styles.shellMeta}>{user?.company || "Mobile workspace"}</Text>
+        </View>
+        <View style={styles.roleBadge}>
+          <Text style={styles.roleBadgeText}>Role: {user?.role || "User"}</Text>
+        </View>
+      </View>
       <View style={styles.contentArea}>{active.component}</View>
       <View style={styles.tabBarWrap}>
         <ScrollView contentContainerStyle={styles.tabBar} horizontal showsHorizontalScrollIndicator={false}>
@@ -81,6 +96,40 @@ const styles = StyleSheet.create({
   },
   contentArea: {
     flex: 1
+  },
+  shellHeader: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderBottomColor: "#dce5ef",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10
+  },
+  shellBrand: {
+    color: "#102033",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 0
+  },
+  shellMeta: {
+    color: "#526174",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2
+  },
+  roleBadge: {
+    backgroundColor: "#e6f0f5",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7
+  },
+  roleBadgeText: {
+    color: "#176b87",
+    fontSize: 12,
+    fontWeight: "800"
   },
   loadingScreen: {
     alignItems: "center",

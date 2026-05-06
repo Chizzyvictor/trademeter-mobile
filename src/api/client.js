@@ -8,6 +8,45 @@ const ATTENDANCE_ENDPOINT = `${API_BASE_URL}/apiEmployeeAttendance.php`;
 const SETTINGS_ENDPOINT = `${API_BASE_URL}/apiSettings.php`;
 const PROFILE_ENDPOINT = `${API_BASE_URL}/apiUserProfile.php`;
 
+const responseKeyAliases = {
+  sname: "sName",
+  semail: "sEmail",
+  sphone: "sPhone",
+  saddress: "sAddress",
+  slogo: "sLogo",
+  advancepayment: "advancePayment",
+  totalamount: "totalAmount",
+  amountpaid: "amountPaid",
+  createdat: "createdAt",
+  updatedat: "updatedAt",
+  totalsales: "totalSales",
+  totalpurchases: "totalPurchases",
+  rangetransactions: "rangeTransactions",
+  inventoryvalue: "inventoryValue",
+  activedebtors: "activeDebtors",
+  activecreditors: "activeCreditors",
+  totalpartners: "totalPartners",
+  topsellingproducts: "topSellingProducts",
+  topsuppliers: "topSuppliers",
+  topbuyers: "topBuyers"
+};
+
+function normalizeResponseKeys(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeResponseKeys);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.entries(value).reduce((next, [key, entryValue]) => {
+    const alias = responseKeyAliases[String(key).toLowerCase()] || key;
+    next[alias] = normalizeResponseKeys(entryValue);
+    return next;
+  }, {});
+}
+
 function isResponseSuccess(payload) {
   if (!payload || typeof payload !== "object") {
     return false;
@@ -58,7 +97,7 @@ async function postForm(url, action, fields = {}, csrfToken = "") {
   }
 
   try {
-    data = text ? JSON.parse(text) : {};
+    data = normalizeResponseKeys(text ? JSON.parse(text) : {});
   } catch {
     throw new Error("The server did not return valid JSON.");
   }
@@ -173,6 +212,36 @@ export async function createProductRequest({
   );
 }
 
+export async function editCategoryRequest({ category_id, category_name, category_description, csrfToken = "" }) {
+  return postForm(INVENTORY_ENDPOINT, "editCategory", { category_id, category_name, category_description }, csrfToken);
+}
+
+export async function deleteCategoryRequest({ category_id, csrfToken = "" }) {
+  return postForm(INVENTORY_ENDPOINT, "deleteCategory", { category_id }, csrfToken);
+}
+
+export async function editProductRequest({
+  product_id,
+  product_name,
+  category_id,
+  product_unit,
+  cost_price,
+  selling_price,
+  reorder_level,
+  csrfToken = ""
+}) {
+  return postForm(
+    INVENTORY_ENDPOINT,
+    "editProduct",
+    { product_id, product_name, category_id, product_unit, cost_price, selling_price, reorder_level },
+    csrfToken
+  );
+}
+
+export async function deleteProductRequest({ product_id, csrfToken = "" }) {
+  return postForm(INVENTORY_ENDPOINT, "deleteProduct", { product_id }, csrfToken);
+}
+
 export async function restockProductRequest({ product_id, quantity, csrfToken = "" }) {
   return postForm(INVENTORY_ENDPOINT, "restockProduct", { product_id, quantity }, csrfToken);
 }
@@ -183,6 +252,14 @@ export async function loadLowStockRequest({ csrfToken = "" } = {}) {
 
 export async function loadProductDetailsRequest({ product_id, csrfToken = "" }) {
   return postForm(INVENTORY_ENDPOINT, "loadProductDetails", { product_id }, csrfToken);
+}
+
+export async function getReorderSuggestionsRequest({ csrfToken = "" } = {}) {
+  return postForm(INVENTORY_ENDPOINT, "getReorderSuggestions", {}, csrfToken);
+}
+
+export async function loadStockLedgerRequest({ product_id = "", csrfToken = "" } = {}) {
+  return postForm(INVENTORY_ENDPOINT, "loadStockLedger", { product_id }, csrfToken);
 }
 
 export async function loadTransactionsRequest({ csrfToken = "" } = {}) {
@@ -225,6 +302,10 @@ export async function createSaleRequest({ partner_id, amountPaid = 0, transactio
 
 export async function payPurchaseRequest({ purchase_id, amount, csrfToken = "" }) {
   return postForm(TRANSACTIONS_ENDPOINT, "payPurchase", { purchase_id, amount }, csrfToken);
+}
+
+export async function loadPurchaseDetailsRequest({ purchase_id, csrfToken = "" }) {
+  return postForm(TRANSACTIONS_ENDPOINT, "loadPurchaseDetails", { purchase_id }, csrfToken);
 }
 
 export async function loadAttendanceOverviewRequest({ csrfToken = "" } = {}) {
@@ -270,6 +351,10 @@ export async function saveShiftRuleRequest({
   );
 }
 
+export async function signInEmployeeRequest({ user_id, signin_at = "", csrfToken = "" }) {
+  return postForm(ATTENDANCE_ENDPOINT, "signInEmployee", { user_id, signin_at }, csrfToken);
+}
+
 export async function signOutEmployeeRequest({ user_id, csrfToken = "" }) {
   return postForm(ATTENDANCE_ENDPOINT, "signOutEmployee", { user_id }, csrfToken);
 }
@@ -302,6 +387,10 @@ export async function requestCorrectionRequest({
   );
 }
 
+export async function loadEmployeeProfileRequest({ user_id, csrfToken = "" }) {
+  return postForm(ATTENDANCE_ENDPOINT, "loadEmployeeProfile", { user_id }, csrfToken);
+}
+
 export async function loadSettingsRequest({ csrfToken = "" } = {}) {
   return postForm(SETTINGS_ENDPOINT, "loadSettings", {}, csrfToken);
 }
@@ -328,6 +417,10 @@ export async function updateUserRoleRequest({ user_id, role_id, csrfToken = "" }
 
 export async function toggleUserStatusRequest({ user_id, is_active, csrfToken = "" }) {
   return postForm(SETTINGS_ENDPOINT, "toggleUserStatus", { user_id, is_active }, csrfToken);
+}
+
+export async function seedDemoUsersRequest({ csrfToken = "" } = {}) {
+  return postForm(SETTINGS_ENDPOINT, "seedDemoUsers", {}, csrfToken);
 }
 
 export async function loadRememberAuditRequest({ csrfToken = "" } = {}) {
@@ -362,10 +455,55 @@ export async function loadBackupAuditRequest({ csrfToken = "" } = {}) {
   return postForm(SETTINGS_ENDPOINT, "loadBackupAudit", {}, csrfToken);
 }
 
+export async function restoreBackupRequest({ filename, csrfToken = "" }) {
+  return postForm(SETTINGS_ENDPOINT, "restoreBackup", { filename }, csrfToken);
+}
+
+export async function restoreEncryptedBackupRequest({ filename, passphrase, csrfToken = "" }) {
+  return postForm(SETTINGS_ENDPOINT, "restoreEncryptedBackup", { filename, passphrase }, csrfToken);
+}
+
+export function getBackupDownloadUrl({ filename, encrypted = false, csrfToken = "" }) {
+  const params = new URLSearchParams({
+    action: encrypted ? "downloadEncryptedBackup" : "downloadBackup",
+    filename,
+    csrf_token: csrfToken
+  });
+  return `${SETTINGS_ENDPOINT}?${params.toString()}`;
+}
+
 export async function loadUserProfileRequest({ csrfToken = "" } = {}) {
   return postForm(PROFILE_ENDPOINT, "getUserProfile", {}, csrfToken);
 }
 
+export async function loadPerformanceSummaryRequest({ csrfToken = "" } = {}) {
+  return postForm(PROFILE_ENDPOINT, "loadPerformanceSummary", {}, csrfToken);
+}
+
+export async function changeEmailRequest({ email, password, csrfToken = "" }) {
+  return postForm(PROFILE_ENDPOINT, "changeEmail", { newEmail: email, password }, csrfToken);
+}
+
+export async function changePasswordRequest({ currentPassword, newPassword, confirmPassword, csrfToken = "" }) {
+  return postForm(PROFILE_ENDPOINT, "changePassword", { currentPassword, newPassword, confirmPassword }, csrfToken);
+}
+
 export async function loadMessagingRequest({ csrfToken = "" } = {}) {
   return postForm(PROFILE_ENDPOINT, "loadMessagingData", {}, csrfToken);
+}
+
+export async function sendMessageRequest({ recipient_user_id, category = "info", subject, body, csrfToken = "" }) {
+  return postForm(PROFILE_ENDPOINT, "sendMessage", { recipient_user_id, category, subject, body }, csrfToken);
+}
+
+export async function markMessageReadRequest({ message_id, csrfToken = "" }) {
+  return postForm(PROFILE_ENDPOINT, "markMessageRead", { message_id }, csrfToken);
+}
+
+export async function markMessagesReadRequest({ message_ids = [], csrfToken = "" } = {}) {
+  return postForm(PROFILE_ENDPOINT, "markMessagesRead", { message_ids: JSON.stringify(message_ids) }, csrfToken);
+}
+
+export async function heartbeatPresenceRequest({ csrfToken = "" } = {}) {
+  return postForm(PROFILE_ENDPOINT, "heartbeatPresence", {}, csrfToken);
 }
