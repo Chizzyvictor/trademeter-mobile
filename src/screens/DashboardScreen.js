@@ -1,3 +1,4 @@
+import { FontAwesome5 } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,23 +13,32 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { loadDashboardRequest } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
-const ranges = [
+const RANGES = [
   { label: "Today", value: "today" },
   { label: "7 Days", value: "7d" },
   { label: "30 Days", value: "30d" },
-  { label: "All", value: "all" }
+  { label: "All Time", value: "all" }
 ];
 
-const rangeLabels = {
+const RANGE_LABELS = {
   today: "Today",
   "7d": "Last 7 Days",
   "30d": "Last 30 Days",
   all: "All Time"
 };
 
+const TONE_ICON_COLOR = {
+  danger: "#b42318",
+  primary: "#176b87",
+  warning: "#b7791f",
+  success: "#147a3f",
+  info: "#14738a",
+  slate: "#526174"
+};
+
 function toNumber(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function formatCurrency(value) {
@@ -45,21 +55,16 @@ function formatCount(value) {
 }
 
 function trendLabel(current, previous, higherIsBetter = true) {
-  const currentValue = toNumber(current);
-  const previousValue = toNumber(previous);
-
-  if (previousValue === 0) {
-    return currentValue > 0 ? "New activity" : "No change";
-  }
-
-  const growth = ((currentValue - previousValue) / previousValue) * 100;
-  const improved = higherIsBetter ? growth >= 0 : growth <= 0;
-  const direction = growth >= 0 ? "up" : "down";
-  return `${Math.abs(growth).toFixed(1)}% ${direction}${improved ? "" : " watch"}`;
+  const cur = toNumber(current);
+  const prev = toNumber(previous);
+  if (prev === 0) return cur > 0 ? "New activity" : "No change";
+  const pct = ((cur - prev) / prev) * 100;
+  const improved = higherIsBetter ? pct >= 0 : pct <= 0;
+  return `${Math.abs(pct).toFixed(1)}% ${pct >= 0 ? "up" : "down"}${improved ? "" : " watch"}`;
 }
 
 export default function DashboardScreen() {
-  const { csrfToken, signOut, user } = useAuth();
+  const { csrfToken, user } = useAuth();
   const [range, setRange] = useState("all");
   const [dashboard, setDashboard] = useState(null);
   const [error, setError] = useState("");
@@ -76,7 +81,7 @@ export default function DashboardScreen() {
       setError("");
       if (mode === "refresh") {
         setRefreshing(true);
-      } else {
+      } else if (mode !== "silent") {
         setLoading(true);
       }
 
@@ -84,8 +89,8 @@ export default function DashboardScreen() {
         const result = await loadDashboardRequest({ range: nextRange, csrfToken });
         setDashboard(result);
         setLastUpdated(new Date());
-      } catch (dashboardError) {
-        setError(dashboardError.message || "Could not load dashboard.");
+      } catch (err) {
+        setError(err.message || "Could not load dashboard.");
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -99,30 +104,300 @@ export default function DashboardScreen() {
   }, [loadDashboard, range]);
 
   useEffect(() => {
-    if (!autoRefresh) {
-      return undefined;
-    }
-
-    const id = setInterval(() => {
-      loadDashboard(range, "silent");
-    }, 60000);
-
+    if (!autoRefresh) return undefined;
+    const id = setInterval(() => loadDashboard(range, "silent"), 60000);
     return () => clearInterval(id);
   }, [autoRefresh, loadDashboard, range]);
 
-  const cards = useMemo(
+  const row1 = useMemo(
     () => [
       {
         label: "Total Outstanding",
         tone: "danger",
+        icon: "exclamation-circle",
         value: formatCurrency(dashboard?.outstanding),
         badge: toNumber(dashboard?.outstanding) > 0 ? "Needs attention" : "All settled"
       },
       {
         label: "Advance Payments",
         tone: "primary",
+        icon: "wallet",
         value: formatCurrency(dashboard?.advancePayment),
-        badge: toNumber(dashboard?.advancePayment) > 0 ? "Cash buffer active" : "No prepayments"
+        badge: toNumber(dashboard?.advancePayment) > 0 ? "Cash buffer" : "No prepayments"
+      },
+      {
+        label: "Active Debtors",
+        tone: "warning",
+        icon: "user-clock",
+        value: formatCount(dashboard?.activeDebtors),
+        badge: toNumber(dashboard?.activeDebtors) > 0 ? "Collections watch" : "No active debtors"
+      },
+      {
+        label: "Active Creditors",
+        tone: "success",
+        icon: "hand-holding-usd",
+        value: formatCount(dashboard?.activeCreditors),
+        badge: toNumber(dashboard?.activeCreditors) > 0 ? "Supplier trust" : "No creditors"
+      }
+    ],
+    [dashboard]
+  );
+
+  const row2 = useMemo(
+    () => [
+      {
+        label: "Total Sales",
+        tone: "success",
+        icon: "chart-line",
+        value: formatCurrency(dashboard?.totalSales),
+        badge:
+          range === "all"
+            ? "All-time total"
+            : trendLabel(dashboard?.trendSummary?.totalSales?.current, dashboard?.trendSummary?.totalSales?.previous)
+      },
+      {
+        label: "Total Purchases",
+        tone: "info",
+        icon: "shopping-cart",
+        value: formatCurrency(dashboard?.totalPurchases),
+        badge:
+          range === "all"
+            ? "All-time total"
+            : trendLabel(
+                dashboard?.trendSummary?.totalPurchases?.current,
+                dashboard?.trendSummary?.totalPurchases?.previous,
+                false
+              )
+      },
+      {
+        label: "Transactions",
+        tone: "primary",
+        icon: "calendar-day",
+        value: formatCount(dashboard?.rangeTransactions),
+        badge:
+          range === "all"
+            ? "All-time activity"
+            : trendLabel(
+                dashboard?.trendSummary?.rangeTransactions?.current,
+                dashboard?.trendSummary?.rangeTransactions?.previous
+              )
+      },
+      {
+        label: "Inventory Value",
+        tone: "slate",
+        icon: "boxes",
+        value: formatCurrency(dashboard?.inventoryValue),
+        badge: "Warehouse value"
+      },
+      {
+        label: "Profit",
+        tone: toNumber(dashboard?.profit) >= 0 ? "success" : "danger",
+        icon: "coins",
+        value: formatCurrency(dashboard?.profit),
+        badge:
+          range === "all"
+            ? "All-time margin"
+            : trendLabel(dashboard?.trendSummary?.profit?.current, dashboard?.trendSummary?.profit?.previous)
+      }
+    ],
+    [dashboard, range]
+  );
+
+  const lastUpdatedStr = lastUpdated
+    ? lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "--";
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadDashboard(range, "refresh")} />}
+      >
+        {/* ── HERO PANEL ── */}
+        <View style={styles.heroPanel}>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroKicker}>TradeMeter Command Center</Text>
+            <Text style={styles.heroTitle}>Performance Overview</Text>
+            <Text style={styles.heroSubtitle}>
+              Stay on top of revenue, stock value, debt exposure, and your strongest trading relationships from one premium dashboard.
+            </Text>
+            <View style={styles.contextList}>
+              <ContextPill text={`User: ${displayName} | Role: ${role}`} />
+              <ContextPill text={`Showing: ${RANGE_LABELS[range]}`} />
+              <ContextPill text={`Last updated: ${lastUpdatedStr}`} />
+            </View>
+          </View>
+
+          <View style={styles.heroDivider} />
+
+          <View style={styles.heroControls}>
+            <Text style={styles.controlLabel}>Date Range</Text>
+            <View style={styles.rangeTabs}>
+              {RANGES.map((item) => (
+                <TouchableOpacity
+                  key={item.value}
+                  onPress={() => setRange(item.value)}
+                  style={[styles.rangeTab, range === item.value ? styles.rangeTabActive : null]}
+                >
+                  <Text style={[styles.rangeTabText, range === item.value ? styles.rangeTabTextActive : null]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity onPress={() => setAutoRefresh((v) => !v)} style={styles.autoRefreshRow}>
+              <View style={[styles.autoDot, autoRefresh ? styles.autoDotOn : null]} />
+              <Text style={styles.autoRefreshText}>Auto-refresh (60s)</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {loading ? <ActivityIndicator color="#176b87" style={styles.loader} /> : null}
+
+        {/* ── SUMMARY CARDS ── */}
+        <Text style={styles.gridSectionLabel}>Summary</Text>
+        <CardGrid cards={row1} />
+
+        {/* ── PERFORMANCE CARDS ── */}
+        <Text style={styles.gridSectionLabel}>Performance</Text>
+        <CardGrid cards={row2} />
+
+        {/* ── TOP METRICS TABLES ── */}
+        <TopTable
+          kicker="High Performers"
+          title="Top Selling Products"
+          icon="fire"
+          iconTone="success"
+          rows={dashboard?.top?.products || []}
+          nameKey="product_name"
+          qtyKey="total_qty"
+          amountKey="total_amount"
+          nameHeader="Product"
+          qtyHeader="Qty"
+        />
+        <TopTable
+          kicker="Supply Network"
+          title="Top Suppliers"
+          icon="truck"
+          iconTone="info"
+          rows={dashboard?.top?.suppliers || []}
+          nameKey="sName"
+          qtyKey="transactions"
+          amountKey="total_amount"
+          nameHeader="Supplier"
+          qtyHeader="Txn"
+        />
+        <TopTable
+          kicker="Customer Momentum"
+          title="Top Buyers"
+          icon="user-friends"
+          iconTone="primary"
+          rows={dashboard?.top?.buyers || []}
+          nameKey="sName"
+          qtyKey="transactions"
+          amountKey="total_amount"
+          nameHeader="Buyer"
+          qtyHeader="Txn"
+        />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+/* ── SUB-COMPONENTS ── */
+
+function ContextPill({ text }) {
+  return (
+    <View style={styles.contextPill}>
+      <Text style={styles.contextPillText}>{text}</Text>
+    </View>
+  );
+}
+
+function CardGrid({ cards }) {
+  const pairs = [];
+  for (let i = 0; i < cards.length; i += 2) {
+    pairs.push(cards.slice(i, i + 2));
+  }
+  return (
+    <View style={styles.statsGrid}>
+      {pairs.map((pair, rowIndex) => (
+        <View key={rowIndex} style={styles.cardRow}>
+          {pair.map((card) => (
+            <StatCard key={card.label} {...card} />
+          ))}
+          {pair.length === 1 ? <View style={styles.cardFill} /> : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function StatCard({ badge, icon, label, tone, value }) {
+  return (
+    <View style={[styles.statCard, styles[`statCard_${tone}`]]}>
+      <View style={styles.statCardBody}>
+        <View style={styles.statCardLeft}>
+          <Text style={styles.statLabel}>{label}</Text>
+          <Text style={[styles.statValue, styles[`text_${tone}`]]}>{value}</Text>
+          <View style={[styles.trendBadge, styles[`badge_${tone}`]]}>
+            <Text style={[styles.trendBadgeText, styles[`badgeText_${tone}`]]}>{badge}</Text>
+          </View>
+        </View>
+        <View style={[styles.iconCircle, styles[`iconCircle_${tone}`]]}>
+          <FontAwesome5 name={icon} size={18} color={TONE_ICON_COLOR[tone]} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function TopTable({ amountKey, icon, iconTone, kicker, nameHeader, nameKey, qtyHeader, qtyKey, rows, title }) {
+  return (
+    <View style={styles.tableCard}>
+      <View style={styles.tableCardHead}>
+        <View>
+          <Text style={styles.tableKicker}>{kicker}</Text>
+          <Text style={styles.tableTitle}>{title}</Text>
+        </View>
+        <View style={[styles.tableHeadIcon, styles[`iconCircle_${iconTone}`]]}>
+          <FontAwesome5 name={icon} size={14} color={TONE_ICON_COLOR[iconTone]} />
+        </View>
+      </View>
+
+      <View style={styles.tableHeaderRow}>
+        <Text style={[styles.tableHeaderCell, { flex: 3 }]}>{nameHeader}</Text>
+        <Text style={[styles.tableHeaderCell, styles.textRight, { flex: 1 }]}>{qtyHeader}</Text>
+        <Text style={[styles.tableHeaderCell, styles.textRight, { flex: 2 }]}>Amount</Text>
+      </View>
+
+      {rows.length === 0 ? (
+        <Text style={styles.emptyText}>No data available</Text>
+      ) : (
+        rows.map((item, index) => (
+          <View key={index} style={styles.tableDataRow}>
+            <Text style={[styles.tableDataName, { flex: 3 }]} numberOfLines={1}>
+              {item[nameKey] || "-"}
+            </Text>
+            <Text style={[styles.tableDataCell, styles.textRight, { flex: 1 }]}>
+              {formatCount(item[qtyKey])}
+            </Text>
+            <Text style={[styles.tableDataCell, styles.textRight, { flex: 2 }]}>
+              {formatCurrency(item[amountKey])}
+            </Text>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
+/* ── STYLES ── */
+
+const styles = StyleSheet.create({
+  screen: { backgroundColor: "#f6f8fb", flex: 1 },
+  content: {
       },
       {
         label: "Active Debtors",
@@ -271,305 +546,3 @@ export default function DashboardScreen() {
     </SafeAreaView>
   );
 }
-
-function MetricCard({ badge, label, tone, value }) {
-  return (
-    <View style={[styles.metric, styles[`metric_${tone}`]]}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, styles[`text_${tone}`]]}>{value}</Text>
-      <Text style={[styles.badge, styles[`badge_${tone}`]]}>{badge}</Text>
-    </View>
-  );
-}
-
-function TopList({ amountKey, emptyText, nameKey, qtyKey, rows, title }) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {rows.length === 0 ? <Text style={styles.emptyText}>{emptyText}</Text> : null}
-      {rows.map((item, index) => (
-        <View key={`${title}-${index}`} style={styles.listRow}>
-          <View style={styles.rank}>
-            <Text style={styles.rankText}>{index + 1}</Text>
-          </View>
-          <View style={styles.listMain}>
-            <Text style={styles.listName}>{item[nameKey] || "-"}</Text>
-            <Text style={styles.listMeta}>Qty/Txn: {formatCount(item[qtyKey])}</Text>
-          </View>
-          <Text style={styles.listAmount}>{formatCurrency(item[amountKey])}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: "#f6f8fb",
-    flex: 1
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 34
-  },
-  header: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 18
-  },
-  kicker: {
-    color: "#176b87",
-    fontSize: 13,
-    fontWeight: "800",
-    letterSpacing: 0,
-    marginBottom: 5
-  },
-  title: {
-    color: "#102033",
-    fontSize: 26,
-    fontWeight: "800",
-    letterSpacing: 0
-  },
-  signOutButton: {
-    borderColor: "#cbd6e2",
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 9
-  },
-  signOutText: {
-    color: "#2a3747",
-    fontSize: 13,
-    fontWeight: "800"
-  },
-  contextBar: {
-    backgroundColor: "#ffffff",
-    borderColor: "#e1e8f0",
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 6,
-    marginBottom: 14,
-    padding: 14
-  },
-  contextText: {
-    color: "#526174",
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  controls: {
-    gap: 12,
-    marginBottom: 16
-  },
-  rangeTabs: {
-    backgroundColor: "#e8eef5",
-    borderRadius: 8,
-    flexDirection: "row",
-    padding: 4
-  },
-  rangeButton: {
-    alignItems: "center",
-    borderRadius: 6,
-    flex: 1,
-    minHeight: 40,
-    justifyContent: "center"
-  },
-  rangeButtonActive: {
-    backgroundColor: "#ffffff"
-  },
-  rangeText: {
-    color: "#526174",
-    fontSize: 13,
-    fontWeight: "800"
-  },
-  rangeTextActive: {
-    color: "#176b87"
-  },
-  autoRefreshButton: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    minHeight: 34
-  },
-  autoDot: {
-    backgroundColor: "#aab7c5",
-    borderRadius: 6,
-    height: 12,
-    width: 12
-  },
-  autoDotOn: {
-    backgroundColor: "#147a3f"
-  },
-  autoRefreshText: {
-    color: "#526174",
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  loader: {
-    marginVertical: 14
-  },
-  error: {
-    color: "#b42318",
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 20,
-    marginBottom: 12
-  },
-  cardGrid: {
-    gap: 12,
-    marginBottom: 18
-  },
-  metric: {
-    backgroundColor: "#ffffff",
-    borderLeftWidth: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 16
-  },
-  metric_danger: {
-    borderColor: "#f3c6c2",
-    borderLeftColor: "#b42318"
-  },
-  metric_primary: {
-    borderColor: "#c7d8ee",
-    borderLeftColor: "#176b87"
-  },
-  metric_warning: {
-    borderColor: "#f4d7a6",
-    borderLeftColor: "#b7791f"
-  },
-  metric_success: {
-    borderColor: "#bfe4cd",
-    borderLeftColor: "#147a3f"
-  },
-  metric_info: {
-    borderColor: "#bfe3ee",
-    borderLeftColor: "#14738a"
-  },
-  metric_slate: {
-    borderColor: "#d7dee8",
-    borderLeftColor: "#526174"
-  },
-  metricLabel: {
-    color: "#526174",
-    fontSize: 13,
-    fontWeight: "700",
-    marginBottom: 8
-  },
-  metricValue: {
-    color: "#102033",
-    fontSize: 24,
-    fontWeight: "900",
-    letterSpacing: 0,
-    marginBottom: 10
-  },
-  text_danger: {
-    color: "#b42318"
-  },
-  text_primary: {
-    color: "#176b87"
-  },
-  text_warning: {
-    color: "#b7791f"
-  },
-  text_success: {
-    color: "#147a3f"
-  },
-  text_info: {
-    color: "#14738a"
-  },
-  text_slate: {
-    color: "#2a3747"
-  },
-  badge: {
-    alignSelf: "flex-start",
-    borderRadius: 8,
-    fontSize: 12,
-    fontWeight: "800",
-    overflow: "hidden",
-    paddingHorizontal: 9,
-    paddingVertical: 5
-  },
-  badge_danger: {
-    backgroundColor: "#fde8e6",
-    color: "#b42318"
-  },
-  badge_primary: {
-    backgroundColor: "#e6f0f5",
-    color: "#176b87"
-  },
-  badge_warning: {
-    backgroundColor: "#fff3d8",
-    color: "#8a5a12"
-  },
-  badge_success: {
-    backgroundColor: "#e3f5e9",
-    color: "#147a3f"
-  },
-  badge_info: {
-    backgroundColor: "#e1f3f7",
-    color: "#14738a"
-  },
-  badge_slate: {
-    backgroundColor: "#eef2f6",
-    color: "#526174"
-  },
-  section: {
-    backgroundColor: "#ffffff",
-    borderColor: "#e1e8f0",
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 14,
-    padding: 14
-  },
-  sectionTitle: {
-    color: "#102033",
-    fontSize: 18,
-    fontWeight: "900",
-    letterSpacing: 0,
-    marginBottom: 12
-  },
-  emptyText: {
-    color: "#7b8794",
-    fontSize: 14
-  },
-  listRow: {
-    alignItems: "center",
-    borderTopColor: "#edf2f7",
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    paddingVertical: 11
-  },
-  rank: {
-    alignItems: "center",
-    backgroundColor: "#e8eef5",
-    borderRadius: 8,
-    height: 30,
-    justifyContent: "center",
-    width: 30
-  },
-  rankText: {
-    color: "#176b87",
-    fontSize: 13,
-    fontWeight: "900"
-  },
-  listMain: {
-    flex: 1
-  },
-  listName: {
-    color: "#102033",
-    fontSize: 14,
-    fontWeight: "800"
-  },
-  listMeta: {
-    color: "#526174",
-    fontSize: 12,
-    marginTop: 3
-  },
-  listAmount: {
-    color: "#102033",
-    fontSize: 13,
-    fontWeight: "900"
-  }
-});

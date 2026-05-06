@@ -13,7 +13,7 @@ import TransactionsScreen from "./src/screens/TransactionsScreen";
 import UserProfileScreen from "./src/screens/UserProfileScreen";
 
 function RootScreen() {
-  const { isLoading, user, userToken } = useAuth();
+  const { isLoading, user, userToken, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
 
   const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
@@ -59,6 +59,9 @@ function RootScreen() {
         <View style={styles.roleBadge}>
           <Text style={styles.roleBadgeText}>Role: {user?.role || "User"}</Text>
         </View>
+        <TouchableOpacity onPress={signOut} style={styles.signOutBtn}>
+          <Text style={styles.signOutBtnText}>Sign out</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.contentArea}>{active.component}</View>
       <View style={styles.tabBarWrap}>
@@ -128,6 +131,18 @@ const styles = StyleSheet.create({
   },
   roleBadgeText: {
     color: "#176b87",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  signOutBtn: {
+    borderColor: "#cbd6e2",
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7
+  },
+  signOutBtnText: {
+    color: "#526174",
     fontSize: 12,
     fontWeight: "800"
   },
