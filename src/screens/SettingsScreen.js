@@ -52,6 +52,7 @@ export default function SettingsScreen() {
   const [backupAudit, setBackupAudit] = useState([]);
   const [restoreFilename, setRestoreFilename] = useState("");
   const [seededUsers, setSeededUsers] = useState([]);
+  const [confirmId, setConfirmId] = useState("");
 
   const isOwner = String(user?.role || "").toLowerCase() === "owner";
 
@@ -167,12 +168,19 @@ export default function SettingsScreen() {
     }
   }
 
-  async function toggleUser(user) {
+  async function toggleUser(userRow) {
+    const willDeactivate = Number(userRow.is_active || 0) === 1;
+    const key = `toggle-${userRow.user_id}`;
+    if (willDeactivate && confirmId !== key) {
+      setConfirmId(key);
+      return;
+    }
+    setConfirmId("");
     setSaving(true);
     try {
       await toggleUserStatusRequest({
-        user_id: user.user_id,
-        is_active: Number(user.is_active || 0) === 1 ? 0 : 1,
+        user_id: userRow.user_id,
+        is_active: willDeactivate ? 0 : 1,
         csrfToken
       });
       await load("load");
@@ -184,6 +192,12 @@ export default function SettingsScreen() {
   }
 
   async function revokeSession(sessionId) {
+    const key = `revoke-${sessionId}`;
+    if (confirmId !== key) {
+      setConfirmId(key);
+      return;
+    }
+    setConfirmId("");
     setSaving(true);
     try {
       await revokeSessionRequest({ session_id: sessionId, csrfToken });
@@ -229,6 +243,12 @@ export default function SettingsScreen() {
       return;
     }
 
+    const key = `restore-${filename}`;
+    if (confirmId !== key) {
+      setConfirmId(key);
+      return;
+    }
+    setConfirmId("");
     setSaving(true);
     try {
       await restoreBackupRequest({ filename, csrfToken });
@@ -315,8 +335,19 @@ export default function SettingsScreen() {
                 <TouchableOpacity disabled={saving} onPress={() => saveRole(user)} style={styles.inlineBtn}>
                   <Text style={styles.inlineBtnText}>Save role</Text>
                 </TouchableOpacity>
-                <TouchableOpacity disabled={saving} onPress={() => toggleUser(user)} style={styles.statusBtn}>
-                  <Text style={styles.statusBtnText}>{Number(user.is_active || 0) === 1 ? "Deactivate" : "Activate"}</Text>
+                <TouchableOpacity
+                  disabled={saving}
+                  onPress={() => toggleUser(user)}
+                  style={[
+                    styles.statusBtn,
+                    Number(user.is_active || 0) === 1 && confirmId === `toggle-${user.user_id}` ? styles.statusBtnPending : null
+                  ]}
+                >
+                  <Text style={styles.statusBtnText}>
+                    {Number(user.is_active || 0) === 1
+                      ? confirmId === `toggle-${user.user_id}` ? "Confirm deactivate" : "Deactivate"
+                      : "Activate"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -345,8 +376,14 @@ export default function SettingsScreen() {
               <Text style={styles.userMeta}>Last active: {fmtEpoch(row.last_activity)}</Text>
               <Text style={styles.userMeta}>{row.is_current ? "Current session" : "Remote session"}</Text>
               {!row.is_current ? (
-                <TouchableOpacity disabled={saving} onPress={() => revokeSession(row.session_id)} style={styles.inlineBtn}>
-                  <Text style={styles.inlineBtnText}>Revoke session</Text>
+                <TouchableOpacity
+                  disabled={saving}
+                  onPress={() => revokeSession(row.session_id)}
+                  style={[styles.inlineBtn, confirmId === `revoke-${row.session_id}` ? styles.inlineBtnPending : null]}
+                >
+                  <Text style={styles.inlineBtnText}>
+                    {confirmId === `revoke-${row.session_id}` ? "Confirm revoke" : "Revoke session"}
+                  </Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -411,8 +448,14 @@ export default function SettingsScreen() {
               onChangeText={(value) => setRestoreFilename(value)}
               value={restoreFilename}
             />
-            <TouchableOpacity disabled={saving} onPress={restoreBackup} style={styles.secondaryBtn}>
-              <Text style={styles.secondaryBtnText}>{saving ? "Please wait..." : "Restore selected backup"}</Text>
+            <TouchableOpacity
+              disabled={saving}
+              onPress={restoreBackup}
+              style={[styles.secondaryBtn, confirmId === `restore-${restoreFilename.trim()}` ? styles.secondaryBtnPending : null]}
+            >
+              <Text style={styles.secondaryBtnText}>
+                {saving ? "Please wait..." : confirmId === `restore-${restoreFilename.trim()}` ? "Tap again to confirm restore" : "Restore selected backup"}
+              </Text>
             </TouchableOpacity>
 
             <Text style={styles.label}>Backup audit ({backupAudit.length})</Text>
@@ -467,14 +510,17 @@ const styles = StyleSheet.create({
   primaryBtn: { alignItems: "center", backgroundColor: "#176b87", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 10 },
   primaryBtnText: { color: "#fff", fontSize: 13, fontWeight: "800" },
   secondaryBtn: { alignItems: "center", backgroundColor: "#e8eef5", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 8 },
+  secondaryBtnPending: { backgroundColor: "#f5e0dc", borderColor: "#c0392b", borderWidth: 2 },
   secondaryBtnText: { color: "#2b435b", fontSize: 13, fontWeight: "800" },
   userRow: { borderTopColor: "#edf2f7", borderTopWidth: 1, marginTop: 8, paddingTop: 8 },
   userName: { color: "#102033", fontSize: 13, fontWeight: "800" },
   userMeta: { color: "#5f6e82", fontSize: 12, fontWeight: "600" },
   rowActions: { flexDirection: "row", gap: 8, marginTop: 8 },
   inlineBtn: { alignItems: "center", backgroundColor: "#176b87", borderRadius: 8, flex: 1, justifyContent: "center", minHeight: 36 },
+  inlineBtnPending: { backgroundColor: "#a12f2f" },
   inlineBtnText: { color: "#fff", fontSize: 12, fontWeight: "800" },
   statusBtn: { alignItems: "center", backgroundColor: "#0f7f4f", borderRadius: 8, flex: 1, justifyContent: "center", minHeight: 36 },
+  statusBtnPending: { backgroundColor: "#a12f2f" },
   statusBtnText: { color: "#fff", fontSize: 12, fontWeight: "800" },
   filterRow: { flexDirection: "row", gap: 8, marginTop: 8 },
   filterBtn: { alignItems: "center", backgroundColor: "#edf2f8", borderRadius: 999, justifyContent: "center", minHeight: 32, paddingHorizontal: 12 },

@@ -73,6 +73,7 @@ export default function InventoryScreen() {
   });
   const [deleteCategoryId, setDeleteCategoryId] = useState("");
   const [deleteProductId, setDeleteProductId] = useState("");
+  const [confirmId, setConfirmId] = useState("");
   const [restockQty, setRestockQty] = useState({});
   const [detailsByProduct, setDetailsByProduct] = useState({});
   const [reorderSuggestions, setReorderSuggestions] = useState([]);
@@ -247,6 +248,12 @@ export default function InventoryScreen() {
       return;
     }
 
+    const key = `del-cat-${categoryId}`;
+    if (confirmId !== key) {
+      setConfirmId(key);
+      return;
+    }
+    setConfirmId("");
     setSaving(true);
     try {
       await deleteCategoryRequest({ category_id: categoryId, csrfToken });
@@ -297,6 +304,12 @@ export default function InventoryScreen() {
       return;
     }
 
+    const key = `del-prod-${productId}`;
+    if (confirmId !== key) {
+      setConfirmId(key);
+      return;
+    }
+    setConfirmId("");
     setSaving(true);
     try {
       await deleteProductRequest({ product_id: productId, csrfToken });
@@ -502,8 +515,14 @@ export default function InventoryScreen() {
               </View>
             </ScrollView>
           </View>
-          <TouchableOpacity disabled={saving} onPress={handleDeleteCategory} style={styles.dangerBtn}>
-            <Text style={styles.dangerBtnText}>{saving ? "Please wait..." : "Delete category"}</Text>
+          <TouchableOpacity
+            disabled={saving}
+            onPress={handleDeleteCategory}
+            style={[styles.dangerBtn, confirmId === `del-cat-${deleteCategoryId}` ? styles.dangerBtnPending : null]}
+          >
+            <Text style={styles.dangerBtnText}>
+              {saving ? "Please wait..." : confirmId === `del-cat-${deleteCategoryId}` ? "Tap again to confirm delete" : "Delete category"}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -618,8 +637,14 @@ export default function InventoryScreen() {
               </View>
             </ScrollView>
           </View>
-          <TouchableOpacity disabled={saving} onPress={handleDeleteProduct} style={styles.dangerBtn}>
-            <Text style={styles.dangerBtnText}>{saving ? "Please wait..." : "Delete product"}</Text>
+          <TouchableOpacity
+            disabled={saving}
+            onPress={handleDeleteProduct}
+            style={[styles.dangerBtn, confirmId === `del-prod-${deleteProductId}` ? styles.dangerBtnPending : null]}
+          >
+            <Text style={styles.dangerBtnText}>
+              {saving ? "Please wait..." : confirmId === `del-prod-${deleteProductId}` ? "Tap again to confirm delete" : "Delete product"}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -763,6 +788,7 @@ const styles = StyleSheet.create({
   primaryBtn: { alignItems: "center", backgroundColor: "#176b87", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 10 },
   primaryBtnText: { color: "#fff", fontSize: 13, fontWeight: "800" },
   dangerBtn: { alignItems: "center", backgroundColor: "#a12f2f", borderRadius: 8, minHeight: 42, justifyContent: "center", marginTop: 8 },
+  dangerBtnPending: { backgroundColor: "#c0392b", borderColor: "#7b1d1d", borderWidth: 2 },
   dangerBtnText: { color: "#fff", fontSize: 13, fontWeight: "800" },
   quickPickWrap: { marginTop: 8 },
   quickPickTitle: { color: "#55667b", fontSize: 11, fontWeight: "700", marginBottom: 4 },
